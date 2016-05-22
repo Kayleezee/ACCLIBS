@@ -40,29 +40,6 @@ struct simple_negate : public thrust::unary_function<T,T>
 };
 
 
-template <typename T>
-struct negate_and_clamp : public thrust::unary_function<T,T>
-{
-	T lo, hi;
-
-    __host__ __device__
-    negate_and_clamp(T _lo, T _hi) : lo(_lo), hi(_hi) {}
-
-    __host__ __device__
-    T operator()(T x)
-    {
-       x = -x;
-	   
-	   if (x < lo)
-            return lo;
-        else if (x < hi)
-            return x;
-        else
-            return hi;
-	   
-    }
-};
-
 template <typename Iterator>
 void print_range(const std::string& name, Iterator first, Iterator last)
 {
