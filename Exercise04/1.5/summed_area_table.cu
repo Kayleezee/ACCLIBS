@@ -79,13 +79,34 @@ void scan_horizontally(size_t m, size_t n, thrust::device_vector<T>& d_data)
 template <typename T>
 void transpose_scan_horizontally(size_t m, size_t n, thrust::device_vector<T>& d_data)
 {
-  thrust::counting_iterator<size_t> indices(0);
+  
+  auto pi_ = thrust::make_permutation_iterator(
+      d_data.begin(), 
+      thrust::make_transform_iterator(thrust::counting_iterator<size_t>(0),
+      transpose_index(n, m))
+    );
     
+  thrust::inclusive_scan_by_key(
+    thrust::make_transform_iterator(thrust::counting_iterator<size_t>(0), row_index(m)),
+    thrust::make_transform_iterator(thrust::counting_iterator<size_t>(0), row_index(m)) + d_data.size(),
+    
+    pi_,
+    
+    pi_
+    
+  );
+  
+  /*
+  1. Approach:
+  
+  thrust::counting_iterator<size_t> indices(0);
+  
   thrust::inclusive_scan_by_key
     (thrust::make_transform_iterator(indices, row_index(m)),
      thrust::make_transform_iterator(indices, row_index(m)) + d_data.size(),
      thrust::make_permutation_iterator(d_data.begin(),thrust::make_transform_iterator(indices,transpose_index(n,m))),
      d_data.begin());
+  */
 }
 
 // print an M-by-N array
@@ -111,48 +132,62 @@ int main(void)
   std::cout << "Nr. of Columns: " << n << std::endl;
   
   // 2d array stored in row-major order [(0,0), (0,1), (0,2) ... ]
-  thrust::device_vector<int> data(m * n, 1);
-
- // std::cout << "[step 0] initial array" << std::endl;
- // print(m, n, data);
-
-  //std::cout << "[step 1] scan horizontally" << std::endl;
-  scan_horizontally(m, n, data);
-  //print(m, n, data);
+  //thrust::device_vector<int> data(m * n, 1);
+  //thrust::device_vector<int> data_modified(m * n, 1);
   
-  //std::cout << "[step 2] transpose and scan with temp array" << std::endl;
+  std::cout << "THRUST EXAMPLE: " << std::endl;
+  std::cout << "======================== " << std::endl;
+  {
+    // 2d array stored in row-major order [(0,0), (0,1), (0,2) ... ]
+    thrust::device_vector<int> data(m * n, 1);
+    
+    // Synchronise cuda device and start measurement.
+    cudaDeviceSynchronize();
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    //std::cout << "[step 1] scan horizontally" << std::endl;
+    scan_horizontally(m, n, data);
+    
+    //std::cout << "[step 2] transpose and scan with temp array" << std::endl
+    thrust::device_vector<int> temp(m * n);
+    transpose(m, n, data, temp);
+    
+    //std::cout << "[step 3] scan transpose horizontally" << std::endl;
+    scan_horizontally(n, m, temp);
+    
+    //std::cout << "[step 4] transpose the transpose" << std::endl;
+    transpose(n, m, temp, data);
+   // print(m, n, data);
+    
+    cudaDeviceSynchronize();
+    auto endTime= std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = endTime-startTime;
+    std::cout << "Temp approach in ms: "<< diff.count()*1000 << std::endl;
+  }
   
-  // Synchronise cuda device and start measurement.
-  cudaDeviceSynchronize();
-  auto startTime = std::chrono::high_resolution_clock::now();
+  std::cout << std::endl;
   
-  thrust::device_vector<int> temp(m * n);
-  transpose(m, n, data, temp);
-  //print(n, m, temp);
-  //std::cout << "[step 3] scan transpose horizontally" << std::endl;
-  scan_horizontally(n, m, temp);
-  //print(n, m, temp);
-  
-  cudaDeviceSynchronize();
-  auto endTime= std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> diff = endTime-startTime;
-  std::cout << "Temp approach in ms: "<< diff.count()*1000 << std::endl;
-  
-  //std::cout << "[step 3.5] transpose+scan horizontally via permutation_iterator" << std::endl;
-  
-  // Synchronise cuda device and start measurement.
-  cudaDeviceSynchronize();
-  startTime = std::chrono::high_resolution_clock::now();
-  transpose_scan_horizontally(m, n, data);
-  //print(n, m, data);
-  cudaDeviceSynchronize();
-  endTime= std::chrono::high_resolution_clock::now();
-  diff = endTime-startTime;
-  std::cout << "Perm_iter approach in ms: "<< diff.count()*1000 << std::endl;
-
- // std::cout << "[step 4] transpose the transpose" << std::endl;
- // transpose(n, m, temp, data);
-  //print(m, n, data);
+  std::cout << "THRUST EXAMPLE MODIFIED: " << std::endl;
+  std::cout << "======================== " << std::endl;
+  {
+    // 2d array stored in row-major order [(0,0), (0,1), (0,2) ... ]
+    thrust::device_vector<int> data(m * n, 1);    
+    
+    // Synchronise cuda device and start measurement.
+    cudaDeviceSynchronize();
+    auto startTime = std::chrono::high_resolution_clock::now();
+    
+    //std::cout << "[step 1] scan horizontally" << std::endl;
+    scan_horizontally(m, n, data);
+    
+    transpose_scan_horizontally(m, n, data);
+   // print(m, n, data);
+    
+    cudaDeviceSynchronize();
+    auto endTime= std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = endTime-startTime;
+    std::cout << "Perm_iter approach in ms: "<< diff.count()*1000 << std::endl;
+  }
 
   return 0;
 }
